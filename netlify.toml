@@ -1,0 +1,30 @@
+# Netlify Configuration File
+
+[build]
+  # 'Src' folder ko publish karega (HTML/CSS/JS files ke liye)
+  publish = "Src"
+  
+  # Netlify Functions ka rasta
+  functions = "netlify/functions"
+
+[build.environment]
+  NODE_VERSION = "18"
+
+# Redirects: Frontend se backend call ke liye
+[[redirects]]
+  from = "/api/*"
+  to = "/.netlify/functions/:splat"
+  status = 200
+
+# Functions configuration
+[functions]
+  node_bundler = "esbuild"
+
+# Security Headers
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Frame-Options = "DENY"
+    X-XSS-Protection = "1; mode=block"
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "strict-origin-when-cross-origin"
