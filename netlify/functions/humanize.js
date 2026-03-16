@@ -10,7 +10,6 @@ exports.handler = async function(event, context) {
 
     if (event.httpMethod === 'OPTIONS') return { statusCode: 200, headers, body: '' };
 
-    // userText ko scope se bahar rakha taaki catch block ise access kar sake
     let userText = "";
 
     try {
@@ -24,6 +23,7 @@ exports.handler = async function(event, context) {
         const apiKey = process.env.OPENROUTER_API_KEY;
 
         if (!apiKey || !userText) {
+            console.log("Error: Missing API Key or Text"); // Debug log
             return { statusCode: 400, headers, body: JSON.stringify({ error: "Invalid Request: Text or API Key missing" }) };
         }
 
@@ -31,18 +31,19 @@ exports.handler = async function(event, context) {
         if (selectedModel === 'deep-creative') temperature = 0.85;
         if (selectedModel === 'elite-humanist') temperature = 0.95;
 
-        // PROMPT IMPROVEMENT: AI ko sakti se JSON dene ko bola gaya hai
+        // PROMPT IMPROVEMENT: Markdown JSON se bachne ke liye instruction
         const systemPrompt = `You are a professional AI Text Humanizer. 
 Target Language: ${language}
 Writing Style: ${style !== 'none' ? style : 'Natural and conversational'}
 Intensity: ${level}/10
 
 TASKS:
-1. Rewrite the input text to be 100% human-like, natural, and undetectable.
+1. Rewrite the input text to be human-like, natural, and undetectable.
 2. Maintain original meaning perfectly.
-3. Identify exactly which sentences in your NEW humanized output still feel slightly robotic and put them in the aiSentences array.
+3. Identify sentences in your NEW output that still feel slightly robotic and put them in the aiSentences array.
 
-OUTPUT FORMAT (STRICT JSON ONLY):
+CRITICAL: You MUST output ONLY valid JSON. Do not include any other text, no explanations, and NO markdown code blocks (do not use \`\`\`json).
+Output Format:
 {
   "humanizedText": "Your full rewritten text here",
   "aiSentences": ["exact sentence from output that looks robotic"],
@@ -51,16 +52,14 @@ OUTPUT FORMAT (STRICT JSON ONLY):
 
         const freeModels = [
             "google/gemini-flash-1.5-8b:free",
-            "meta-llama/llama-3.3-70b-instruct:free",
-            "nvidia/nemotron-4-12b:free",
-            "openchat/openchat-20b:free"
+            "meta-llama/llama-3.3-70b-instruct:free"
         ];
         
         let finalData = null;
 
         for (const modelId of freeModels) {
             try {
-                console.log(`Trying model: ${modelId}`);
+                console.log(`Trying model: ${modelId}`); // Netlify Logs mein dikhega
                 
                 const response = await axios.post(
                     'https://openrouter.ai/api/v1/chat/completions',
@@ -70,33 +69,44 @@ OUTPUT FORMAT (STRICT JSON ONLY):
                             { role: "system", content: systemPrompt },
                             { role: "user", content: userText }
                         ],
-                        response_format: { type: "json_object" }, // Yeh ensure karega ki JSON hi mile
+                        // HATA DIYA: response_format: { type: "json_object" }
                         temperature: temperature,
-                        max_tokens: 2000 // Thoda zyada tokens for long text
+                        max_tokens: 2000
                     },
                     {
                         headers: { 
                             'Authorization': `Bearer ${apiKey}`,
-                            'HTTP-Referer': 'https://yourdomain.com',
-                            'X-Title': 'AI Humanizer Pro'
+                            'HTTP-Referer': 'https://yourdomain.com', // Replace this if needed
+                            'Content-Type': 'application/json'
                         },
-                        timeout: 35000 // Netlify limit ke andar
+                        timeout: 25000 // Thoda kam kiya taaki Netlify timeout (10s limit on free tier) se bache
                     }
                 );
 
-                const content = JSON.parse(response.data.choices[0].message.content);
+                // API response check karne ke liye log
+                console.log("Raw Response received from OpenRouter.");
+
+                let rawContent = response.data.choices[0].message.content;
+                
+                // Cleanup: Agar AI ne markdown (```json) diya hai, toh usko hatao
+                rawContent = rawContent.replace(/```json/g, '').replace(/```/g, '').trim();
+
+                const content = JSON.parse(rawContent);
                 
                 if (content.humanizedText) {
                     finalData = content;
-                    break;
+                    console.log("Success with model:", modelId);
+                    break; // Success hone par loop break karo
                 }
             } catch (err) {
-                console.error(`Model ${modelId} failed:`, err.message);
+                // Yahan tumhe Netlify logs mein exact reason dikhega ki model kyu fail hua
+                console.error(`Model ${modelId} failed:`, err.response ? err.response.data : err.message);
                 continue;
             }
         }
 
         if (!finalData) {
+            console.log("All AI models failed, using fallback.");
             const fallbackText = simpleHumanize(userText);
             return {
                 statusCode: 200,
@@ -104,7 +114,7 @@ OUTPUT FORMAT (STRICT JSON ONLY):
                 body: JSON.stringify({ 
                     output: fallbackText,
                     humanScore: 82,
-                    aiSentences: [] // Fallback mein highlight nahi karenge
+                    aiSentences: []
                 })
             };
         }
@@ -140,10 +150,7 @@ function simpleHumanize(text) {
         { from: /\bI am\b/g, to: "I'm" },
         { from: /\bdo not\b/g, to: "don't" },
         { from: /\bcannot\b/g, to: "can't" },
-        { from: /\bit is\b/g, to: "it's" },
-        { from: /\bIn conclusion,\b/gi, to: "To wrap up," },
-        { from: /\bMoreover,\b/gi, to: "Plus," },
-        { from: /\bHowever,\b/gi, to: "But," }
+        { from: /\bit is\b/g, to: "it's" }
     ];
     for (const rep of replacements) {
         result = result.replace(rep.from, rep.to);
