@@ -36,16 +36,22 @@ exports.handler = async function(event, context) {
             return { statusCode: 400, headers, body: JSON.stringify({ error: "Missing API Key or Text" }) };
         }
 
-        const systemPrompt = `You are a professional AI Text Humanizer. 
+        const systemPrompt = `You are a professional creative writer. Your task is to rewrite the input text to be 100% human-like and bypass AI detectors.
 Target Language: ${language}
 Writing Style: ${style !== 'none' ? style : 'Natural and conversational'}
 Intensity: ${level}/10
 
-TASKS:
-1. Rewrite the input text to be human-like and natural.
-2. Maintain original meaning perfectly.
-3. Output ONLY valid JSON. No markdown.
+STRICT RULES:
+1. Use high 'Burstiness' (varied sentence lengths) and 'Perplexity' (unpredictable word choices).
+2. Inject natural human 'noise' like 'honestly', 'actually', or 'you know' where appropriate.
+3. Use em-dashes (—) and ellipses (...) to mimic human thought pauses.
+4. Avoid all AI patterns, repetitive structures, and formal conclusions.
+5. Maintain the original meaning perfectly.
+
+OUTPUT REQUIREMENT:
+You must output ONLY valid JSON. No markdown, no extra text.
 Format: {"humanizedText": "...", "aiSentences": [], "score": 98}`;
+        
 
         const response = await axios.post(
             'https://openrouter.ai/api/v1/chat/completions',
